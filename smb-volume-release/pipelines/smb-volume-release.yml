@@ -11,7 +11,7 @@ groups:
   - claim-env
   - prepare-env
   - run-cats
-  - <REPLACE_ME>
+  - volume-services-acceptance-tests
   - export-release
   - ship-what
   - ship-it
@@ -54,15 +54,15 @@ resources:
   type: git
   icon: git
   source:
-    branch: develop
-    uri: git@github.com:<REPLACE_ME>
+    branch: with-runtime-ci
+    uri: git@github.com:cloudfoundry/smb-volume-release
     private_key: ((github-tas-runtime-bot/private-key))
 
 - name: release-branch 
   type: git
   icon: git
   source:
-    uri: git@github.com:cloudfoundry/<REPLACE_ME>.git
+    uri: git@github.com:cloudfoundry/smb-volume-release.git
     branch: release
     private_key: ((github-tas-runtime-bot/private-key))
 
@@ -70,7 +70,7 @@ resources:
   type: git
   icon: git
   source:
-    uri: git@github.com:cloudfoundry/<REPLACE_ME>.git
+    uri: git@github.com:cloudfoundry/smb-volume-release.git
     branch: develop
     private_key: ((github-tas-runtime-bot/private-key))
 
@@ -110,6 +110,13 @@ resources:
     uri: https://github.com/cloudfoundry/wg-app-platform-runtime-ci
     paths: [go-version.json]
 
+- name: cf-volume-services-acceptance-tests
+  type: git
+  icon: git
+  source:
+    uri: https://github.com/cloudfoundry/cf-volume-services-acceptance-tests.git
+    branch: main
+
 #! TIMERS
 - name: daily
   type: time
@@ -136,7 +143,7 @@ resources:
   icon: github
   source:
     access_token: ((github-tas-runtime-bot/access-token))
-    repository: <REPLACE_ME>
+    repository: smb-volume-release
     owner: cloudfoundry
 
 - name: draft-github-release 
@@ -145,7 +152,7 @@ resources:
   source:
     access_token: ((github-tas-runtime-bot/access-token))
     drafts: true
-    repository: <REPLACE_ME>
+    repository: smb-volume-release
     owner: cloudfoundry
 
 - name: version
@@ -154,7 +161,7 @@ resources:
   source:
     driver: gcs
     bucket: ci-release-versions
-    key: <REPLACE_ME>/version
+    key: smb-volume-release/version
     json_key: ((gcp-tas-runtime-service-account/config-json))
 
 - name: env-lock
@@ -162,7 +169,7 @@ resources:
   icon: cloud-lock
   source:
     branch: main
-    pool: <REPLACE_ME>-env-lock 
+    pool: smb-volume-release-env-lock 
     private_key: ((github-tas-runtime-bot/private-key))
     uri: git@github.com:cloudfoundry/runtime-ci-pools.git
 
@@ -170,10 +177,10 @@ resources:
   type: docker-image                             
   icon: docker
   source:                                        
-    repository: us-central1-docker.pkg.dev/cf-diego-pivotal/tas-runtime-dockerhub-mirror/cloudfoundry/tas-runtime-build
-    username: _json_key
-    password: ((gcp-tas-runtime-service-account/config-json))
+    repository: cloudfoundry/tas-runtime-build
     tag: 'latest'
+    username: ((dockerhub-tasruntime-username))
+    password: ((dockerhub-tasruntime-password))
 
 #! Define-Jobs
 jobs:
@@ -187,12 +194,13 @@ jobs:
       - get: image
       - get: daily
         trigger: true
-  - task: <REPLACE_ME>-bump-dependencies-go-mod
+  - task: smb-volume-release-bump-dependencies-go-mod
     image: image
     file: ci/shared/tasks/bump-dependencies-go-mod/linux.yml
     params:
       GO_MODS: |
-        <REPLACE_ME>
+        src/code.cloudfoundry.org/smbbroker/go..mod
+        src/code.cloudfoundry.org/smbdriver/go.mod
   - put: repo
     params:
       rebase: true
@@ -225,8 +233,10 @@ jobs:
       package-release: golang-release-latest
     params:
       PACKAGE_NAME: golang-*-linux
-      AWS_ACCESS_KEY_ID: ((aws-s3-garden-linux-release/access-key-id))
-      AWS_SECRET_ACCESS_KEY: ((aws-s3-garden-linux-release/secret-access-key))
+      AWS_SECRET_ACCESS_KEY: ((aws-s3-107350105730-smb-volume-services-s3/secret-access-key))
+      AWS_ACCESS_KEY_ID: ((aws-s3-107350105730-smb-volume-services-s3/access-key-id))
+      AWS_ASSUME_ROLE_ARN: ((aws-s3-107350105730-smb-volume-services-s3/assume-role))
+
 
   - put: repo
     params:
@@ -261,23 +271,15 @@ jobs:
     file: ci/shared/tasks/determine-image-tag/linux.yml
   - load_var: image_tag
     file: determined-image-tag/tag
-  - task: build-binaries
-    file: ci/shared/tasks/build-binaries/linux.yml
-    params:
-      DEFAULT_PARAMS: "ci/<REPLACE_ME>/default-params/build-binaries/linux.yml"
-    vars:
-      image_repository: cloudfoundry/tas-runtime-build
-      image_tag: ((.:image_tag))
   - in_parallel:
 #@ for repo in data.values.internal_repos:
-    - task: #@ "{}".format(repo)
+    - task: #@ "{}".format(repo.name)
       file: ci/shared/tasks/run-bin-test/linux.yml
       vars:
         image_repository: cloudfoundry/tas-runtime-build
         image_tag: ((.:image_tag))
       params:
-        DIR: #@ "src/code.cloudfoundry.org/{}".format(repo)
-        DEFAULT_PARAMS: "ci/<REPLACE_ME>/default-params/run-bin-test/linux.yml"
+        DIR: #@ "src/code.cloudfoundry.org/{}".format(repo.name)
 #@ end
 
 - name: lint-repo
@@ -318,12 +320,13 @@ jobs:
 
 - name: prepare-env
   serial: true
+  serial_groups: [acceptance]
   plan:
   - in_parallel:
     - get: ci
     - get: repo
-      trigger: true
-      passed: [claim-env]
+      #! trigger: true
+      #! passed: [claim-env]
     - get: image
     - get: cf-deployment
     - get: cf-deployment-concourse-tasks
@@ -334,7 +337,9 @@ jobs:
     image: image
     file: ci/shared/tasks/run-bin-prepare-cf-deployment-env/linux.yml
     params:
-      FUNCTIONS: "ci/<REPLACE_ME>/helpers/helpers.bash"
+      VARS:
+        smb-username: ((azure-smb-volume-access-volume-services/username))
+        smb-password: ((azure-smb-volume-access-volume-services/password))
   - task: combine-ops-files
     file: ci/shared/tasks/combine-assets/linux.yml
     image: image
@@ -343,19 +348,10 @@ jobs:
     params:
       COPY_ACTIONS: |
         {input-01/operations/use-compiled-releases.yml,combined-assets}
-        <REPLACE_ME>
+        {input-01/operations/test/enable-smb-test-server.yml,combined-assets}
+        {input-01/operations/backup-and-restore/enable-backup-restore.yml,combined-assets}
+        {input-01/operations/enable-smb-volume-service.yml,combined-assets}
   - task: deploy-cf-deployment
-    file: cf-deployment-concourse-tasks/bosh-deploy/task.yml
-    input_mapping:
-      ops-files: combined-assets
-      vars-files: prepared-env
-      toolsmiths-env: env
-    params:
-      DEPLOY_WITH_UPTIME_MEASUREMENTS: "false"
-      FAIL_ON_DOWNTIME: "false"
-      VARS_FILES: vars.yml
-      OPS_FILES: #@ "\n".join(data.values.opsfiles)
-  - task: uptimer-measure-with-<REPLACE_ME>-update
     file: cf-deployment-concourse-tasks/bosh-deploy-with-created-release/task.yml
     input_mapping:
       ops-files: combined-assets
@@ -363,20 +359,8 @@ jobs:
       vars-files: prepared-env
       toolsmiths-env: env
     params:
-      DEPLOY_WITH_UPTIME_MEASUREMENTS: "true"
-      APP_PUSHABILITY_THRESHOLD: "20"
-      APP_STATS_THRESHOLD: "20"
-      HTTP_AVAILABILITY_THRESHOLD: "20"
-      TCP_AVAILABILITY_THRESHOLD: "20"
-      AVAILABLE_PORT: "-1"
-      TCP_PORT: "1029"
-      FAIL_ON_DOWNTIME: "true"
-      MEASURE_SYSLOG_AVAILABILITY: "false"
-      MEASURE_TCP_AVAILABILITY: "true"
-      RECENT_LOGS_THRESHOLD: "50"
-      STREAMING_LOGS_THRESHOLD: "50"
-      APP_SYSLOG_AVAILABILITY_THRESHOLD: "50"
-      USE_SINGLE_APP_INSTANCE: "false"
+      DEPLOY_WITH_UPTIME_MEASUREMENTS: "false"
+      FAIL_ON_DOWNTIME: "false"
       VARS_FILES: vars.yml
       OPS_FILES: #@ "\n".join(data.values.opsfiles)
   - task: open-asg-for-credhub
@@ -399,6 +383,13 @@ jobs:
       toolsmiths-env: env
     params:
       ENABLED_FEATURE_FLAGS: diego_docker service_instance_sharing
+  - task: run-smbbrokerpush-errand
+    file: cf-deployment-concourse-tasks/run-errand/task.yml
+    input_mapping:
+      toolsmiths-env: env
+    params:
+      ERRAND_NAME: smbbrokerpush
+      INSTANCE: smb-broker-push
 
 - name: run-cats
   serial: true
@@ -420,9 +411,14 @@ jobs:
     image: image
     file: ci/shared/tasks/build-acceptance-test-configs/linux.yml
     params:
+      ENVS: |
+        VOLUME_SERVICE_NAME=smb
+        VOLUME_SERVICE_PLAN=Existing
+        VOLUME_SERVICE_CREATE_CONFIG='{\"share\": \"((azure-smb-volume-access-volume-services/remote_path))\", \"username\": \"((azure-smb-volume-access-volume-services/username))\", \"password\": \"((azure-smb-volume-access-volume-services/password))\"}'
       CONFIGS: cats
-      WITH_ISOSEG: true
-      WITH_DYNAMIC_ASG: true
+      WITH_VOLUME_SERVICES: true
+      WITH_ISOSEG: false
+      WITH_DYNAMIC_ASG: false
   - task: cats
     file: cf-deployment-concourse-tasks/run-cats/task.yml
     attempts: 2
@@ -430,6 +426,58 @@ jobs:
       integration-config: built-acceptance-test-configs
     params:
       CONFIG_FILE_PATH: cats.json
+
+- name: volume-services-acceptance-tests
+  serial: true
+  serial_groups: [acceptance]
+  plan:
+  - in_parallel:
+      fail_fast: true
+      steps:
+      - get: cf-volume-services-acceptance-tests
+      - get: ci
+      - get: image
+      - get: env
+        passed: [ prepare-env ]
+        trigger: true
+      - get: repo
+        passed: [ prepare-env ]
+        trigger: true
+      - get: package-release
+        resource: golang-release-latest
+  - task: determine-image-tag
+    image: image
+    file: ci/shared/tasks/determine-image-tag/linux.yml
+  - load_var: image_tag
+    file: determined-image-tag/tag
+  - task: generate-pats-config-smb
+    image: image
+    file: ci/shared/tasks/build-acceptance-test-configs/linux.yml
+    params:
+      CONFIGS: volume-services-acceptance-tests
+      ENVS: |
+        VOLUME_SERVICE_DISALLOWED_OVERRIDE_BIND_CONFIG='{\"share\":\"//smbtestserver.service.cf.internal/export/vol2\"}'
+        VOLUME_SERVICE_CREATE_BOGUS_CONFIG='{\"share\":\"//smb.bogus/export/nonexistensevol\"}'
+        VOLUME_SERVICE_BIND_CONFIG='["{\"username\":\"((azure-smb-volume-access-volume-services/username))\",\"password\":\"((azure-smb-volume-access-volume-services/password))\", \"domain\": \"foo\"}", "{\"username\":\"((azure-smb-volume-access-volume-services/username))\",\"password\":\"((azure-smb-volume-access-volume-services/password))\", \"domain\": \"foo\", \"version\": \"3.0\"}", "{\"username\":\"((azure-smb-volume-access-volume-services/username))\",\"password\":\"((azure-smb-volume-access-volume-services/password))\", \"mount\": \"/var/vcap/data/foo\", \"domain\": \"foo\"}"]'
+        VOLUME_SERVICE_CREATE_CONFIG='{\"share\":\"((azure-smb-volume-access-volume-services/remote_path))\"}'
+        VOLUME_SERVICE_PLAN_NAME=Existing
+        VOLUME_SERVICE_SERVICE_NAME=smb
+  - task: run-bin-test-cf-volume-services-acceptance-tests
+    file: ci/shared/tasks/run-bin-test/linux.yml
+    input_mapping:
+      input-01: built-acceptance-test-configs
+      repo: cf-volume-services-acceptance-tests
+    attempts: 2
+    vars:
+      image_repository: cloudfoundry/tas-runtime-build
+      image_tag: ((.:image_tag))
+    params:
+      ENVS: |
+        TEST_MOUNT_FAIL_LOGGING=true
+        TEST_MOUNT_OPTIONS=true
+        TEST_MULTI_CELL=true
+        TEST_READ_ONLY=true
+        CONFIG=$PWD/input-01/volume-services-acceptance-tests.json
 
 - name: export-release
   serial: true
@@ -457,7 +505,7 @@ jobs:
         - get: repo
           passed:
             - run-cats
-            - <REPLACE_ME>
+            - volume-services-acceptance-tests
             - export-release
           trigger: true
         - get: image
@@ -469,7 +517,7 @@ jobs:
         - get: env
           passed:
             - run-cats
-            - <REPLACE_ME>
+            - volume-services-acceptance-tests
             - export-release
           trigger: true
 
@@ -479,7 +527,7 @@ jobs:
       input_mapping:
         release-repo: release-branch
 
-    - task: build-release-notes-<REPLACE_ME>
+    - task: build-release-notes-smb-volume-release
       image: image
       file: ci/shared/tasks/build-release-notes/linux.yml
       input_mapping:
@@ -509,7 +557,7 @@ jobs:
       input_mapping:
         release-repo: release-branch
 
-    - task: build-release-notes-<REPLACE_ME>
+    - task: build-release-notes-smb-volume-release
       image: image
       file: ci/shared/tasks/build-release-notes/linux.yml
       input_mapping:
@@ -519,7 +567,9 @@ jobs:
       image: image
       file: ci/shared/tasks/bosh-finalize-release/linux.yml
       params:
-        GCP_BLOBSTORE_SERVICE_ACCOUNT_KEY: ((gcp-tas-runtime-service-account/config-json))
+        AWS_SECRET_ACCESS_KEY: ((aws-s3-107350105730-smb-volume-services-s3/secret-access-key))
+        AWS_ACCESS_KEY_ID: ((aws-s3-107350105730-smb-volume-services-s3/access-key-id))
+        AWS_ASSUME_ROLE_ARN: ((aws-s3-107350105730-smb-volume-services-s3/assume-role))
 
     - put: release-branch
       params:
@@ -534,8 +584,8 @@ jobs:
         source-branch: release-branch
         onto-branch: develop-branch-mergeback
       params:
-        SOURCE_BRANCH_NAME: <REPLACE_ME> or release
-        ONTO_BRANCH_NAME: <REPLACE_ME> or develop
+        SOURCE_BRANCH_NAME: release
+        ONTO_BRANCH_NAME: develop
 
     - in_parallel:
         steps:
@@ -546,7 +596,7 @@ jobs:
             tag_prefix: v
             body: built-release-notes/notes.md
             globs:
-            - finalized-release-tarball/<REPLACE_ME>*.tgz
+            - finalized-release-tarball/smb-volume*.tgz
         - put: develop-branch-mergeback
           params:
             repository: merged-branch
