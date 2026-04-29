@@ -53,6 +53,7 @@ resource_types:
   type: registry-image
   source:
     repository: ebroberson/pool-resource
+    tag: 0.0.4 #! TODO: unpin and use normal pool-resource when PR to fix forked pool is merged
 
 - name: fly
   type: docker-image

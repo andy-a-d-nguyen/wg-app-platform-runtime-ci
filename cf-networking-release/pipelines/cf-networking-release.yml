@@ -62,6 +62,7 @@ resource_types:
   type: registry-image
   source:
     repository: ebroberson/pool-resource
+    tag: 0.0.4 #! TODO: unpin and use normal pool-resource when PR to fix forked pool is merged
 
 #! Define-Resources
 resources:
@@ -593,7 +594,7 @@ jobs:
       file: ci/shared/tasks/sync-readme/linux.yml
       image: image
       input_mapping:
-        repo:  cf-networking-repo-docs
+        repo:  cf-networking-repo-docs  
     - put: cf-networking-repo-synced
       params:
        rebase: true
