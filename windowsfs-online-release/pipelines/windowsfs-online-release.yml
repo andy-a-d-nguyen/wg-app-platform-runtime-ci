@@ -42,7 +42,7 @@ resource_types:
   type: registry-image
   source:
     repository: ebroberson/pool-resource
-    tag: 0.0.4 #! TODO: unpin and use normal pool-resource when PR to fix forked pool is merged
+    tag: 0.0.4 #! TODO: unpin and use normal pool-resource when https://github.com/concourse/pool-resource/pull/82 is merged
 
 #! Define-Resources
 resources:
