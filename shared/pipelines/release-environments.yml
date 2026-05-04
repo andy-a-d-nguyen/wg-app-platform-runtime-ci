@@ -100,6 +100,7 @@ jobs:
         do:
         - task: bbl-destroy
           file: cf-deployment-concourse-tasks/bbl-destroy/task.yml
+          attempts: 5
           input_mapping:
             bbl-config: bbl-state
           params:
