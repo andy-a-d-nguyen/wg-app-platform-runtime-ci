@@ -6,7 +6,7 @@ environments:
     bosh_lite: false
     pipeline_lock: nats-release-env-lock
   - name: bbl-hlthchk-env
-    bosh_lite: true
+    bosh_lite: false
     pipeline_lock: healthchecker-release-env-lock
 
   - name: bbl-routing-env
