@@ -1,0 +1,9 @@
+#! Mitigation for https://github.com/cf-routing/cf-deployment/pull/new/fix-isolated-cell-dns-noble-stemcell
+#! add-persistent-isolation-segment-diego-cell.yml hardcodes dns_servers: [169.254.0.2] (BOSH DNS)
+#! for silk-cni on the isolated cell. On Ubuntu Noble, BOSH DNS refuses external recursive queries,
+#! so staging containers on isolated cells cannot resolve external hostnames (e.g. buildpacks.cloudfoundry.org).
+#! This patch overrides dns_servers to 169.254.0.53 (systemd-resolved) to match regular diego cells.
+#! cf-d PR: https://github.com/cloudfoundry/cf-deployment/pull/1336
+- path: /instance_groups/name=isolated-diego-cell/jobs/name=silk-cni/properties/dns_servers/0
+  type: replace
+  value: 169.254.0.53
