@@ -138,13 +138,20 @@ resources:
     username: ((dockerhub-appruntimeplatform-username))
     password: ((dockerhub-appruntimeplatform-password))
     repository: cloudfoundry/tas-runtime-mysql-8.0
-- name: mysql-docker-repo
+- name: mysql-8.0-docker-repo
   type: git
   icon: source-branch
   source:
     private_key: ((github-appruntimeplatform-bot/private-key))
     uri: git@github.com:docker-library/mysql.git
     branch: master
+#! Pinned to the last commit before docker-library/mysql removed the 8.0/ directory (EOL).
+#! Commit b6c1f39 ("Remove 8.0 (EOL)"), merged as 15c936e on Apr 22 2026, deleted
+#! 8.0/docker-entrypoint.sh and 8.0/config/ which this pipeline's collect-docker-files
+#! task requires. Unpin only after resolving with Option C (drop mysql-8.0 image build).
+#! See: https://github.com/docker-library/mysql/commit/b6c1f3997a86ad4de7ceb6b8c9b0d9f6ee15ac84
+  version:
+    ref: 6b2fc013b75cab7984073abdae136e39256c9935
 - name: mysql-5.7-dockerfile
   type: git
   icon: source-branch
@@ -391,7 +398,7 @@ jobs:
     - get: #@ "mysql-8.0-image-version-{}".format(go_version.name)
       params:
         bump: patch
-    - get: mysql-docker-repo
+    - get: mysql-8.0-docker-repo
       trigger: true
     - get: build-image
   - in_parallel:
@@ -400,7 +407,7 @@ jobs:
       image: build-image
       input_mapping:
         input-01: mysql-8.0-dockerfile
-        input-02: mysql-docker-repo
+        input-02: mysql-8.0-docker-repo
       output_mapping:
         combined-assets: dockerfile-out
       params:
@@ -423,7 +430,7 @@ jobs:
           MYSQL_MAJOR_VERSION: null
         inputs:
         - name: #@ "build-image-version-{}".format(go_version.name)
-        - name: mysql-docker-repo
+        - name: mysql-8.0-docker-repo
         outputs:
         - name: dockerfile-build-args
         run:
@@ -436,7 +443,7 @@ jobs:
 
             export build_uri="cloudfoundry/tas-runtime-build:$(cat build-image-version-*/version)"
             export mysql_major_version="${MYSQL_MAJOR_VERSION:-}"
-            export mysql_version=$(jq -r ".[\"${MYSQL_MAJOR_VERSION}\"].version" mysql-docker-repo/versions.json)
+            export mysql_version=$(jq -r ".[\"${MYSQL_MAJOR_VERSION}\"].version" mysql-8.0-docker-repo/versions.json)
 
             cat <<EOF > dockerfile-build-args/build_args
             BUILD_URI=$build_uri
