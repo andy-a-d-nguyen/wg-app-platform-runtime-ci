@@ -24,6 +24,7 @@ groups:
 - name: periodics
   jobs:
   - bump-dependencies-go-mod
+  - bump-dependencies-gemfile
   - bump-golang
   - bump-bosh-blobs
   - bump-dependencies-envoy
@@ -420,6 +421,27 @@ jobs:
       EXTRA_GO_TAGS: |
         tools
         modules
+  - put: repo
+    params:
+      rebase: true
+      repository: bumped-repo
+
+- name: bump-dependencies-gemfile
+  serial: true
+  on_failure: *ci-notification
+  plan:
+  - in_parallel:
+      steps:
+      - get: ci
+      - get: repo
+      - get: image
+      - get: weekly
+        trigger: true
+  - task: diego-release-bump-dependencies-gemfile
+    image: image
+    file: ci/shared/tasks/bump-dependencies-gemfile/linux.yml
+    params:
+      GEMFILES: Gemfile
   - put: repo
     params:
       rebase: true

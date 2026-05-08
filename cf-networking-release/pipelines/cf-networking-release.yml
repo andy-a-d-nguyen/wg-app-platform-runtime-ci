@@ -23,6 +23,7 @@ groups:
 - name: periodics
   jobs:
   - bump-dependencies-go-mod
+  - bump-dependencies-gemfile
   - bump-package-golang
   - bump-healthchecker-in-networking-release
   - bump-healthchecker-in-silk-release
@@ -417,6 +418,48 @@ jobs:
         params:
           GO_MODS: src/code.cloudfoundry.org/go.mod
           EXTRA_GO_TAGS: tools
+      - put: silk-repo
+        params:
+          rebase: true
+          repository: bumped-silk
+
+- name: bump-dependencies-gemfile
+  serial: true
+  on_failure: *ci-notification
+  plan:
+  - in_parallel:
+      steps:
+      - get: ci
+      - get: cf-networking-repo
+      - get: silk-repo
+      - get: image
+      - get: weekly
+        trigger: true
+  - in_parallel:
+    - do:
+      - task: cf-networking-release-bump-dependencies-gemfile
+        image: image
+        file: ci/shared/tasks/bump-dependencies-gemfile/linux.yml
+        input_mapping:
+          repo: cf-networking-repo
+        output_mapping:
+          bumped-repo: bumped-cf-networking
+        params:
+          GEMFILES: Gemfile
+      - put: cf-networking-repo
+        params:
+          rebase: true
+          repository: bumped-cf-networking
+    - do:
+      - task: silk-release-bump-dependencies-gemfile
+        image: image
+        file: ci/shared/tasks/bump-dependencies-gemfile/linux.yml
+        input_mapping:
+          repo: silk-repo
+        output_mapping:
+          bumped-repo: bumped-silk
+        params:
+          GEMFILES: Gemfile
       - put: silk-repo
         params:
           rebase: true

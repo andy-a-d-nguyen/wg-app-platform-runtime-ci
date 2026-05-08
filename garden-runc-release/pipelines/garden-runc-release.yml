@@ -25,6 +25,7 @@ groups:
 - name: periodics
   jobs:
   - bump-dependencies-go-mod
+  - bump-dependencies-gemfile
   - bump-package-golang
   - bump-bosh-blobs
   - sync-dot-github-dir
@@ -710,6 +711,27 @@ jobs:
       params:
         rebase: true
         repository: bumped-repo
+
+- name: bump-dependencies-gemfile
+  serial: true
+  on_failure: *ci-notification
+  plan:
+  - in_parallel:
+      steps:
+      - get: ci
+      - get: repo
+      - get: image
+      - get: weekly
+        trigger: true
+  - task: garden-runc-release-bump-dependencies-gemfile
+    image: image
+    file: ci/shared/tasks/bump-dependencies-gemfile/linux.yml
+    params:
+      GEMFILES: Gemfile
+  - put: repo
+    params:
+      rebase: true
+      repository: bumped-repo
 
 - name: bump-package-golang
   on_failure: *ci-notification
