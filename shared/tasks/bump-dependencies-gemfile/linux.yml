@@ -1,0 +1,16 @@
+---
+platform: linux
+
+inputs:
+  - name: ci
+  - name: repo
+
+outputs:
+  - name: bumped-repo
+
+params:
+  GEMFILES:
+  ENVS:
+
+run:
+  path: ci/shared/tasks/bump-dependencies-gemfile/task.bash

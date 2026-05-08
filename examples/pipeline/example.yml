@@ -20,6 +20,7 @@ groups:
 - name: periodics
   jobs:
   - bump-dependencies-go-mod
+  - bump-dependencies-gemfile
   - bump-package-golang
 
 - name: manual
@@ -235,6 +236,28 @@ jobs:
     file: ci/shared/tasks/bump-dependencies-go-mod/linux.yml
     params:
       GO_MODS: |
+        <REPLACE_ME>
+  - put: repo
+    params:
+      rebase: true
+      repository: bumped-repo
+
+- name: bump-dependencies-gemfile
+  serial: true
+  on_failure: *ci-notification
+  plan:
+  - in_parallel:
+      steps:
+      - get: ci
+      - get: repo
+      - get: image
+      - get: weekly
+        trigger: true
+  - task: <REPLACE_ME>-bump-dependencies-gemfile
+    image: image
+    file: ci/shared/tasks/bump-dependencies-gemfile/linux.yml
+    params:
+      GEMFILES: |
         <REPLACE_ME>
   - put: repo
     params:
